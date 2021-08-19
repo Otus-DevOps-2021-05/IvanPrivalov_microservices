@@ -1,0 +1,28 @@
+{
+    "variables": {
+           "zone": "ru-central1-a",
+           "instance_cores": "2"
+       },
+    "builders": [
+       {
+           "type": "yandex",
+           "service_account_key_file": "{{user `service_account_key_file`}}",
+           "folder_id": "{{user `folder_id`}}",
+           "source_image_family": "{{user `source_image_family`}}",
+           "image_name": "docker-host-{{timestamp}}",
+           "image_family": "ubuntu-docker-host",
+           "ssh_username": "ubuntu",
+           "platform_id": "standard-v1",
+           "zone": "{{user `zone`}}",
+           "instance_cores": "{{user `instance_cores`}}",
+       "use_ipv4_nat" : "true"
+       }
+   ],
+   "provisioners": [
+       {
+           "type": "ansible",
+           "user": "ubuntu",
+           "playbook_file": "{{ pwd }}/ansible/playbooks/install_docker.yml"
+       }
+   ]
+}

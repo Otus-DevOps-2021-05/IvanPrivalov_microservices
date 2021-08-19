@@ -1,0 +1,8 @@
+REPOSITORY             TAG       IMAGE ID       CREATED          SIZE
+otus/ubuntu-tmp-file   latest    15b87cbe5970   12 seconds ago   63.1MB
+ubuntu                 18.04     39a8cfeef173   3 weeks ago      63.1MB
+hello-world            latest    d1165f221234   5 months ago     13.3kB
+
+На основе IMAGE образа создаются контейнеры, образ содержит инструкцию для создания контейнера.
+При выводе данных команд видно, что образ содержит данные о сетевых настройках, примаунченых
+папках и тд. Из одного образа можно запустить множество контейнеров.
