@@ -1,6 +1,306 @@
 # IvanPrivalov_microservices
 IvanPrivalov microservices repository
 
+# Домашнее задание №13
+____
+
+- описываем и собираем Docker-образ для сервисного приложения;
+- оптимизируем Docker-образы;
+- запускаем приложение из собранного Docker-образа;
+
+## В ДЗ сделано:
+____
+
+1. Скопировал файлы приложения в папку src. Оно разбито на несколько компонентов:
+
+post-py - сервис отвечающий за написание постов;
+comment - сервис отвечающий за написание комментариев;
+ui - веб-интерфейс, работающий с другими сервисами;
+
+2. Создал Docker-файлы для подготовки образов. Инструкцию ADD заменил на COPY (рекомендовано), заменил образ на python:3.6.14-alpine.
+
+./post-py/Dockerfile
+
+```shell
+
+FROM python:3.6.14-alpine
+
+WORKDIR /app
+COPY . /app
+
+RUN apk --no-cache --update add build-base && \
+    pip install -r /app/requirements.txt && \
+    apk del build-base
+
+ENV POST_DATABASE_HOST post_db
+ENV POST_DATABASE posts
+
+ENTRYPOINT ["python3", "post_app.py"]
+
+```
+
+./comment/Dockerfile
+
+```shell
+FROM ruby:2.2
+
+RUN apt-get update -qq && apt-get install -y build-essential
+
+ENV APP_HOME /app
+RUN mkdir $APP_HOME
+WORKDIR $APP_HOME
+
+COPY Gemfile* $APP_HOME/
+RUN bundle install
+COPY . $APP_HOME
+
+ENV COMMENT_DATABASE_HOST comment_db
+ENV COMMENT_DATABASE comments
+
+CMD ["puma"]
+```
+
+./ui/Dockerfile (1-й вариант сборки)
+
+```shell
+
+FROM ruby:2.2
+RUN apt-get update -qq && apt-get install -y build-essential
+
+ENV APP_HOME /app
+RUN mkdir $APP_HOME
+
+WORKDIR $APP_HOME
+ADD Gemfile* $APP_HOME/
+RUN bundle install
+ADD . $APP_HOME
+
+ENV POST_SERVICE_HOST post
+ENV POST_SERVICE_PORT 5000
+ENV COMMENT_SERVICE_HOST comment
+ENV COMMENT_SERVICE_PORT 9292
+
+CMD ["puma"]
+
+```
+
+3. Подключился к ранее созданному хосту с docker "docker-host" в Yandex Cloud:
+
+```shell
+
+eval $(docker-machine env docker-host) # переходим в окружение "docker-host"
+docker-machine ls # проверяем, что хост зарегистрирован и активен
+docker rm -f $(docker ps -q) # удалим старые запущенные контейнеры
+
+```
+
+4. Собрал образы с нашими сервисами и скачал готовый образ MongoDB (БД используют сервисы comment и post):
+
+```shell
+
+docker build -t privalovip/post:1.0 ./post-py
+docker build -t privalovip/comment:1.0 ./comment
+docker build -t privalovip/ui:1.0 ./ui
+docker pull mongo:latest
+
+# проверяем создание образов
+docker images
+
+```
+
+5. Создал bridge-сеть для контейнеров reddit, т.к. сетевые алиасы не работают в дефолтной сети. Затем запустил контейнеры.
+
+```shell
+
+# создаем сеть
+docker network create reddit
+docker network ls # проверяем создание сети
+
+# запускаем контейнеры с алиасами
+docker run -d --network=reddit --network-alias=post_db --network-alias=comment_db mongo:latest
+docker run -d --network=reddit --network-alias=post privalovip/post:1.0
+docker run -d --network=reddit --network-alias=comment privalovip/comment:1.0
+docker run -d --network=reddit -p 9292:9292 privalovip/ui:1.0
+
+# проверяем запуск контейнеров
+docker ps
+
+```
+
+Проверяем, что приложение доступно по ссылке http://<Публичный IP "docker-host">:9292
+
+6. Пересоздал Dockerfile для ui с новыми инструкциями:
+
+./ui/Dockerfile (2-й вариант сборки)
+
+```shell
+
+FROM ubuntu:16.04
+RUN apt-get update \
+    && apt-get install -y ruby-full ruby-dev build-essential \
+    && gem install bundler --no-ri --no-rdoc
+
+ENV APP_HOME /app
+RUN mkdir $APP_HOME
+
+WORKDIR $APP_HOME
+ADD Gemfile* $APP_HOME/
+RUN bundle install
+ADD . $APP_HOME
+
+ENV POST_SERVICE_HOST post
+ENV POST_SERVICE_PORT 5000
+ENV COMMENT_SERVICE_HOST comment
+ENV COMMENT_SERVICE_PORT 9292
+
+CMD ["puma"]
+
+```
+
+7. Собрал образ ui:2.0, запустил новые копии контейнеров c ui:2.0 вместо ui:1.0
+
+```shell
+
+docker build -t privalovip/ui:2.0 ./ui
+
+docker kill $(docker ps -q) # останавливаем контейнеры
+
+docker run -d --network=reddit --network-alias=post_db --network-alias=comment_db mongo:latest
+docker run -d --network=reddit --network-alias=post privalovip/post:1.0
+docker run -d --network=reddit --network-alias=comment privalovip/comment:1.0
+docker run -d --network=reddit -p 9292:9292 privalovip/ui:2.0
+
+```
+
+Проверяем, что приложение доступно по ссылке http://<Публичный IP "docker-host">:9292
+Поскольку контейнер с mongodb был остановлен и пересоздан, комментарии не сохранились.
+
+8. Создал docker volume c именем reddit_db, подключил его к контейнеру с MongoDB, затем запустил новые копии контейнеров:
+
+```shell
+
+# создать volume
+docker volume create reddit_db
+
+docker kill $(docker ps -q) # остановим все запущенные контейнеры
+
+docker run -d --network=reddit --network-alias=post_db --network-alias=comment_db -v reddit_db:/data/db mongo:latest
+docker run -d --network=reddit --network-alias=post privalovip/post:1.0
+docker run -d --network=reddit --network-alias=comment privalovip/comment:1.0
+docker run -d --network=reddit -p 9292:9292 privalovip/ui:2.0
+
+```
+
+Проверка: перейдем по ссылке http://<Публичный IP "docker-host">:9292 и добавим пост.
+После этого перезапустим копии контейнеров. Посты приложения будут сохранены, т.к. данные БД хранятся на томе.
+
+## Задание со *
+____
+
+### Задание 1
+____
+
+- Запустите контейнеры с другими сетевыми алиасами
+- Адреса для взаимодействия контейнеров задаются через ENV-переменные внутри Dockerfile'ов
+- При запуске контейнеров (docker run) задайте им переменные окружения соответствующие новым сетевым алиасам, не пересоздавая образ
+- Проверьте работоспособность сервиса
+
+Решение
+
+Добавил ко всем используемым ранее алиасам название reddit_. При изменении сетевых алиасов мы должны переопределить и ENV-переменные Dockerfile с помощью ключа --env, поскольку они отвечают за сетевое взаимодействие контейнеров между собой.
+
+```shell
+
+docker kill $(docker ps -q) # останавливаем контейнеры
+
+docker run -d --network=reddit --network-alias=reddit_post_db --network-alias=reddit_comment_db mongo:latest
+docker run -d --network=reddit --network-alias=reddit_post --env POST_DATABASE_HOST=reddit_post_db privalovip/post:1.0
+docker run -d --network=reddit --network-alias=reddit_comment --env COMMENT_DATABASE_HOST=reddit_comment_db  privalovip/comment:1.0
+docker run -d --network=reddit -p 9292:9292 --env POST_SERVICE_HOST=reddit_post --env COMMENT_SERVICE_HOST=reddit_comment privalovip/ui:1.0
+
+```
+
+### Задание 2
+____
+
+- Соберите образ на основе Alpine Linux
+- Придумайте еще способы уменьшить размер образа
+
+Решение
+
+Создал Dockerfile_v1 для сервиса ui. Оптимизация размера образа выполняется за cчет опции установки пакетов --no-cache и удаления кэша rm -rf /var/cache/apk/* (если что-то осталось).
+
+```shell
+
+FROM alpine:3.12.4
+
+LABEL Name="Reddit App UI for Alpine"
+LABEL Version="1.0"
+
+RUN apk --update add --no-cache \
+    ruby-full \
+    ruby-dev \
+    build-base \
+    && gem install bundler:1.17.2 --no-document \
+    && rm -rf /var/cache/apk/*
+
+ENV APP_HOME /app
+RUN mkdir $APP_HOME
+
+WORKDIR $APP_HOME
+COPY Gemfile* $APP_HOME/
+RUN bundle install
+COPY . $APP_HOME
+
+ENV POST_SERVICE_HOST post
+ENV POST_SERVICE_PORT 5000
+ENV COMMENT_SERVICE_HOST comment
+ENV COMMENT_SERVICE_PORT 9292
+
+CMD ["puma"]
+
+```
+
+Создать образ alpine_ui:1.0 и запустить копии контейнеров, включая alpine_ui:1.0:
+
+```shell
+
+docker build -f ./ui/Dockerfile_v1 -t privalovip/alpine_ui:1.0 ./ui
+
+docker kill $(docker ps -q) # останавливаем контейнеры
+docker run -d --network=reddit --network-alias=post_db --network-alias=comment_db -v reddit_db:/data/db mongo:latest
+docker run -d --network=reddit --network-alias=post privalovip/post:1.0
+docker run -d --network=reddit --network-alias=comment privalovip/comment:1.0
+docker run -d --network=reddit -p 9292:9292 privalovip/alpine_ui:1.0
+
+```
+
+Проверка
+
+```shell
+
+REPOSITORY             TAG             IMAGE ID       CREATED             SIZE
+privalovip/alpine_ui   1.0             74f1ddbbde8f   25 seconds ago      275MB
+privalovip/post        1.0             4eb4b9a693cb   41 minutes ago      62MB
+privalovip/ui          2.0             546d27a6a4bf   About an hour ago   462MB
+privalovip/ui          1.0             b30d50501878   2 hours ago         771MB
+privalovip/comment     1.0             8af1dce17979   2 hours ago         769MB
+
+```
+
+```shell
+
+CONTAINER ID   IMAGE                      COMMAND                  CREATED             STATUS             PORTS                                       NAMES
+44e8c08df157   privalovip/alpine_ui:1.0   "puma"                   About an hour ago   Up About an hour   0.0.0.0:9292->9292/tcp, :::9292->9292/tcp   priceless_sanderson
+af6522b705f3   privalovip/comment:1.0     "puma"                   About an hour ago   Up About an hour                                               relaxed_mclean
+fb859ce405c8   privalovip/post:1.0        "python3 post_app.py"    About an hour ago   Up About an hour                                               adoring_maxwell
+934b3fcabb66   mongo:latest               "docker-entrypoint.s…"   About an hour ago   Up About an hour   27017/tcp                                   trusting_hertz
+
+```
+
+Проверяем, что приложение доступно по ссылке: http://<Публичный IP "docker-host">:9292
+В моем случае: http://178.154.223.190:9292/
+
 # Домашнее задание №12
 ____
 
