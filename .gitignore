@@ -9,3 +9,4 @@ jdauphant.nginx
 vault.key
 *.swp
 key.json
+.env
