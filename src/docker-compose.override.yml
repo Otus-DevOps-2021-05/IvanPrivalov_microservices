@@ -1,0 +1,19 @@
+version: '3.3'
+services:
+
+  ui:
+    env_file: .env
+    volumes:
+      - ./ui:/app
+    command: ["puma", "--debug", "-w", "2"]
+
+  post:
+    env_file: .env
+    volumes:
+      - ./post-py:/app
+
+  comment:
+    env_file: .env
+    volumes:
+      - ./comment:/app
+    command: ["puma", "--debug", "-w", "2"]

@@ -1,6 +1,407 @@
 # IvanPrivalov_microservices
 IvanPrivalov microservices repository
 
+# Домашнее задание №14
+____
+
+## Docker: сети, docker-compose
+
+- Работа с сетями в Docker
+- Использование docker-compose
+____
+
+### None netwok driver
+
+Внутри контейнера из сетевых интерфейсов существует только loopback. Сетевой стек работает для localhost без возможности контактировать с внешним миром. Подходит для запуска сетевых сервисов внутри контейнера для локальных экспериментов.
+
+Проверка:
+
+```shell
+
+docker run -ti --rm --network none joffotron/docker-net-tools -c ifconfig
+
+lo        Link encap:Local Loopback
+          inet addr:127.0.0.1  Mask:255.0.0.0
+          UP LOOPBACK RUNNING  MTU:65536  Metric:1
+          RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:1000
+          RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
+
+```
+
+### Host netwok driver
+
+Контейнер использует network namespace (пространство имен) docker-хоста.
+Сетевые интерфейсы хоста и контейнера одинаковые.
+
+Проверил сетевые интерфейсы на докер-хосте:
+
+```shell
+
+docker-machine ssh docker-host ifconfig
+
+```
+
+Сравнил интерфейсы в контейнере - они идентичны:
+
+```shell
+
+docker run -ti --rm --network host joffotron/docker-net-tools -c ifconfig
+
+```
+
+### Network namespaces
+
+Network namespaces (простанство имен сетей) обеспечивает изоляюцию сетей в контейнерах.
+Проверил создание network namespaces на docker-хосте:
+
+```shell
+
+# Подключился к docker-хосту
+docker-machine ssh docker-host
+
+# создал симлинк
+sudo ln -s /var/run/docker/netns /var/run/netns
+
+# запустил контейнер в сети none
+docker run -ti --rm --network none joffotron/docker-net-tools -c ifconfig
+
+# Проверил network namespaces:
+sudo ip netns
+# в сети "none" создается свой net-namespace (даже для loopback-интерфейса)
+Error: Peer netns reference is invalid.
+Error: Peer netns reference is invalid.
+cd4afab32317
+default
+
+# запустил контейнер в сети "host"
+docker run -ti --rm --network host joffotron/docker-net-tools -c ifconfig
+# Проверил network namespaces:
+sudo ip netns
+# в сети host net-namespace не создается (есть только default)
+default
+
+```
+
+Попробовал запустить несколько контейнеров с nginx в сети host:
+
+```shell
+
+# Запустил контейнер c nginx
+docker run --network host -d nginx  # 4 раза
+
+# проверил запуск
+docker ps
+
+CONTAINER ID   IMAGE                    COMMAND                  CREATED          STATUS          PORTS      NAMES
+d4e96052caeb   nginx                    "/docker-entrypoint.…"   11 seconds ago   Up 10 seconds              musing_payne
+
+
+# Вывод: запущен только один контейнер, остальные были остановлены.
+# Это связано с тем, что сеть в запускаемых контейнерах, использующих host-драйвер не изолирована.
+# Несколько контейнеров c nginx не могут делить одну хостовую сеть (может работать 1 контейнер).
+
+```
+
+### Bridge network driver
+
+- Контейнеры могут взаимодействовать между собой (если они в одной подсети)
+- Выходят в интернет через NAT (через интерфейс хоста).
+- По-умолчанию создается сеть default-bridge, но она менее функциональна (лучше использовать обычную bridge).
+
+1. Запустил контейнеры и подключил их к подсетям:
+
+```shell
+
+docker kill $(docker ps -q)
+
+# Создадим 2 docker-сети
+docker network create back_net --subnet=10.0.2.0/24
+docker network create front_net --subnet=10.0.1.0/24
+
+# Запустим контейнеры с алиасами в
+docker run -d --network=front_net -p 9292:9292 --name ui  privalovip/ui:1.0
+docker run -d --network=back_net --name comment  privalovip/comment:1.0
+docker run -d --network=back_net --name post  privalovip/post:1.0
+docker run -d --network=back_net --name mongo_db --network-alias=post_db --network-alias=comment_db mongo:latest
+
+# Подключим контейнеры post и comment также к сети front_net
+docker network connect front_net post
+docker network connect front_net comment
+
+```
+
+2. Исследовал bridge-сеть:
+
+```shell
+
+# Подключился к docker-хосту
+docker-machine ssh docker-host
+sudo apt-get update && sudo apt-get install bridge-utils
+
+# Проверил bridge-интерфейсы
+sudo docker network ls
+sudo ifconfig | grep br
+br-49b82943d0ae: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500
+        inet 172.18.0.1  netmask 255.255.0.0  broadcast 172.18.255.255
+br-752e7d286760: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500
+        inet 10.0.2.1  netmask 255.255.255.0  broadcast 10.0.2.255
+br-7cd0030ce977: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500
+        inet 10.0.1.1  netmask 255.255.255.0  broadcast 10.0.1.255
+        inet 172.17.0.1  netmask 255.255.0.0  broadcast 172.17.255.255
+        inet 10.128.0.25  netmask 255.255.255.0  broadcast 10.128.0.255
+
+# Проверил использование NAT контейнерами в iptables:
+sudo iptables -nL -t nat
+
+...
+Chain POSTROUTING (policy ACCEPT)
+target     prot opt source               destination
+MASQUERADE  all  --  10.0.1.0/24          0.0.0.0/0
+MASQUERADE  all  --  10.0.2.0/24          0.0.0.0/0
+MASQUERADE  all  --  172.18.0.0/16        0.0.0.0/0
+MASQUERADE  all  --  172.17.0.0/16        0.0.0.0/0
+MASQUERADE  tcp  --  10.0.1.2             10.0.1.2             tcp dpt:9292
+...
+
+# Здесь же видим правило DNAT, отвечающее за перенаправление трафика на адреса конкретных контейнеров
+DNAT       tcp  --  0.0.0.0/0            0.0.0.0/0            tcp dpt:9292 to:10.0.1.2:9292
+
+```
+
+## docker-compose
+
+1. Установил последнюю версию docker-compose
+
+2. Описал в docker-compose.yml сборку контейнеров с сетями, алиасами (параметризировал с помощью переменных окружений):
+
+docker-compose.yml
+
+```shell
+
+version: '3.3'
+
+services:
+
+  post_db:
+    env_file: .env
+    image: mongo:${MONGODB_VERSION}
+    volumes:
+      - post_db:/data/db
+    networks:
+      back_net:
+        aliases:
+          - post_db
+          - comment_db
+
+  ui:
+    env_file: .env
+    build: ./ui
+    image: ${USERNAME}/ui:${UI_VERSION}
+    ports:
+      - ${UI_HOST_PORT}:${UI_CONTAINER_PORT}/tcp
+    networks:
+      - front_net
+
+  post:
+    env_file: .env
+    build: ./post-py
+    image: ${USERNAME}/post:${POST_VERSION}
+    networks:
+      - front_net
+      - back_net
+
+  comment:
+    env_file: .env
+    build: ./comment
+    image: ${USERNAME}/comment:${COMMENT_VERSION}
+    networks:
+      - front_net
+      - back_net
+
+volumes:
+  post_db:
+
+networks:
+
+  front_net:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: ${FRONT_NET_SUBNET}
+
+  back_net:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: ${BACK_NET_SUBNET}
+
+```
+
+В файле .env хранятся значения переменных (вызывается при запуске docker-compose), он скрыт, для запуска воспользуйтесь шаблоном .env.example:
+
+```shell
+
+# порт публикации приложения
+UI_HOST_PORT=9292
+UI_CONTAINER_PORT=9292
+
+# автор сборки
+USERNAME="Ivan"
+
+# версии образов
+MONGODB_VERSION=3.2
+UI_VERSION=1.0
+POST_VERSION=1.0
+COMMENT_VERSION=1.0
+
+# подсети
+FRONT_NET_SUBNET=10.0.1.0/24
+BACK_NET_SUBNET=10.0.2.0/24
+
+```
+
+Запустить приложение:
+
+```shell
+
+docker kill $(docker ps -q) # остановим старые контейнеры docker
+docker-compose up -d
+
+```
+
+Проверка:
+
+```shell
+
+docker-compose ps
+
+    Name                  Command             State                    Ports
+----------------------------------------------------------------------------------------------
+src_comment_1   puma                          Up
+src_post_1      python3 post_app.py           Up
+src_post_db_1   docker-entrypoint.sh mongod   Up      27017/tcp
+src_ui_1        puma                          Up      0.0.0.0:9292->9292/tcp,:::9292->9292/tcp
+
+```
+
+Альтернативный способ запуска:
+используем ключ --env-file с указанием пути к файлу .env:
+
+```shell
+
+# удалим из docker-compose.yml строчки "env_file: .env"
+docker-compose --env-file .env up -d
+
+```
+
+Приложение доступно по адресу: http://178.154.223.190:9292/
+
+### Изменение базового имени проекта
+
+По-умолчанию имя проекта (префикс) создается из имени каталога, в котором находится проект (в нашем случае src).
+
+Использовать при запуске ключ -p, --project-name NAME, пример:
+
+```shell
+
+docker-compose --project-name reddit up -d
+
+```
+
+### Задание со *
+
+Создайте docker-compose.override.yml для reddit проекта, который позволит:
+- Изменять код каждого из приложений, не выполняя сборку образа;
+- Запускать puma для ruby приложений в дебаг режиме с двумя воркерами (флаги --debug и -w 2).
+
+Решение
+
+Docker Compose по умолчанию по-очереди читает два файла: docker-compose.yml и docker-compose.override.yml.
+В последнем можно хранить переопределения для существующих сервисов или определять новые.
+
+docker-compose.override.yml
+
+```shell
+
+version: '3.3'
+services:
+
+  ui:
+    env_file: .env
+    volumes:
+      - ./ui:/app
+    command: ["puma", "--debug", "-w", "2"]
+
+  post:
+    env_file: .env
+    volumes:
+      - ./post-py:/app
+
+  comment:
+    env_file: .env
+    volumes:
+      - ./comment:/app
+    command: ["puma", "--debug", "-w", "2"]
+
+```
+
+Задан bind mount:
+
+<путь к каталогу приложения на локальном хосте (папка с исходниками проекта)>:<путь к каталогу приложения в контейнере>
+
+Поскольку монтируются папки локального хоста, проверим приложение локально.
+Иначе придется копировать файлы проекта на удаленный docker-хост.
+
+Проверяем, что воркеры запущены:
+
+```shell
+
+eval $(docker-machine env --unset) # переключиться на локальный docker
+docker-machine ls
+docker-compose down # остановить и удалить контейнеры
+docker-compose up -d # запустить контейнеры
+docker-compose config # проверить конфиг
+docker-compose ps
+   Name                  Command             State           Ports
+----------------------------------------------------------------------------
+src_comment_1   puma --debug -w 2             Up
+src_post_1      python3 post_app.py           Up
+src_post_db_1   docker-entrypoint.sh mongod   Up      27017/tcp
+src_ui_1        puma --debug -w 2             Up      0.0.0.0:9292->9292/tcp
+
+```
+
+Проверяем, что можем изменять файлы проекта, не производя билд образа.
+На локальном хосте:
+
+```shell
+
+cd src/ui # переходим в каталог приложения ui
+touch newfile # создадим новый файл
+ls
+config.ru        Dockerfile    Gemfile       helpers.rb     newfile  VERSION
+docker_build.sh  Dockerfile.1  Gemfile.lock  middleware.rb  ui_app.rb    views
+
+```
+
+Проверяем, что файл отображается в папке приложения в контейнере:
+
+```shell
+
+docker-compose exec ui ls ../app
+Dockerfile    Gemfile.lock  docker_build.sh  newfile
+Dockerfile.1  VERSION       helpers.rb       ui_app.rb
+Gemfile       config.ru     middleware.rb    views
+
+```
+
+Приложение доступно по адресу: http://localhost:9292
+
+
 # Домашнее задание №13
 ____
 
