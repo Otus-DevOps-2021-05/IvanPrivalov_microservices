@@ -110,7 +110,7 @@ docker exec -it gitlab-runner gitlab-runner register \
 
 8. Если все успешно, то должен появится новый ранер в Settings -> CI/CD -> Pipelines -> Runners секция Available specific runners и после появления ранера должен выполнится пайплайн.
 
-![image 1](https://github.com/Otus-DevOps-2021-05/IvanPrivalov_microservices/gitlab-ci/blob/master/Screenshot 1.png)
+![image 1](https://github.com/Otus-DevOps-2021-05/IvanPrivalov_microservices/blob/gitlab-ci-1/gitlab-ci/Screenshot_1.png)
 
 9. Добавление Reddit в проект:
 
@@ -158,7 +158,7 @@ gem 'rack-test'
 
 12. Запушим код в GitLab и убедимся, что test_unit_job гоняет тесты.
 
-![image 2](https://github.com/Otus-DevOps-2021-05/IvanPrivalov_microservices/gitlab-ci/blob/master/Screenshot 2.png)
+![image 2](https://github.com/Otus-DevOps-2021-05/IvanPrivalov_microservices/blob/gitlab-ci-1/gitlab-ci/Screenshot_2.png)
 
 13. Добавим в .gitlab-ci.yml новые окружения и условия запусков для ранеров:
 
@@ -251,7 +251,7 @@ git push gitlab gitlab-ci-1 --tags
 
 ```
 
-![image 3](https://github.com/Otus-DevOps-2021-05/IvanPrivalov_microservices/gitlab-ci/blob/master/Screenshot 3.png)
+![image 3](https://github.com/Otus-DevOps-2021-05/IvanPrivalov_microservices/blob/gitlab-ci-1/gitlab-ci/Screenshot_3.png)
 
 Stage и Production окружения запускаются вручную
 
