@@ -39,7 +39,7 @@ services:
       - back_net
 
   post_db:
-#    env_file: .env
+    env_file: .env
     image: mongo:${MONGODB_VERSION}
     volumes:
       - post_db:/data/db
@@ -50,7 +50,7 @@ services:
           - comment_db
 
   ui:
-#    env_file: .env
+    env_file: .env
 #    build: ./ui
 #    image: ${USER_NAME}/ui:${UI_VERSION}
     image: ${USER_NAME}/ui
@@ -60,7 +60,7 @@ services:
       - front_net
 
   post:
-#    env_file: .env
+    env_file: .env
 #    build: ./post-py
 #    image: ${USER_NAME}/post:${POST_VERSION}
     image: ${USER_NAME}/post
@@ -69,7 +69,7 @@ services:
       - back_net
 
   comment:
-#    env_file: .env
+    env_file: .env
 #    build: ./comment
 #    image: ${USER_NAME}/comment:${COMMENT_VERSION}
     image: ${USER_NAME}/comment
