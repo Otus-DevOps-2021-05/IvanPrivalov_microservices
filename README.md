@@ -1,5 +1,351 @@
 # IvanPrivalov_microservices
 IvanPrivalov microservices repository
+# Домашнее задание №16
+____
+
+## Введение в мониторинг. Системы мониторинга.
+____
+
+1. Prometheus: запуск, конфигурация, Web UI
+2. Мониторинг состояния микросервисов
+3. Сбор метрик хоста с использованием экспортера
+
+### Подготовка
+
+1. Создал инcтсанс в Yandex Cloud, проинициализировал на нем docker:
+
+```shell
+
+yc compute instance create \
+  --name gitlab-ci-vm \
+  --zone ru-central1-a \
+  --network-interface subnet-name=otus-ru-central1-a,nat-ip-version=ipv4 \
+  --create-boot-disk image-folder-id=standard-images,image-family=ubuntu-1804-lts,size=15 \
+  --memory 4GB \
+  --ssh-key ~/.ssh/id_rsa.pub
+
+docker-machine create \
+  --driver generic \
+  --generic-ip-address=178.154.206.97 \
+  --generic-ssh-user yc-user \
+  --generic-ssh-key ~/.ssh/id_rsa \
+  docker-host
+
+# перейти в окружение docker хоста
+eval $(docker-machine env docker-host)
+
+```
+
+2. Запустил Prometheus в контейнере для проверки:
+
+```shell
+
+docker run --rm -p 9090:9090 -d --name prometheus  prom/prometheus
+
+```
+
+3. Переупорядчил структуру директорий:
+
+- Создал каталог ./docker и перенес в него каталог docker-monolith и файлы docker-compose.*, .env (переименовал .env.example).
+В нем будем запускать микросервисы в docker-compose.
+- Cоздал каталог ./monitoring/prometheus c файлами: Dockerfile, prometheus.yml.
+В нем будем собирать образ Prometheus.
+
+### Сборка образов
+
+4. Собрал образы микросервисов с healthckeck-ми:
+
+Сборка сервисов reddit с помощью скриптов:
+
+```shell
+
+export USER_NAME=privalovip # добавляем префикс для образа
+
+/src/ui      $ bash docker_build.sh
+/src/post-py $ bash docker_build.sh
+/src/comment $ bash docker_build.sh
+
+```
+
+Сборка Prometheus из Dockerfile:
+
+```shell
+
+cd ./monitoring/prometheus
+docker build -t $USER_NAME/prometheus .
+
+```
+
+Dockerfile
+
+```shell
+
+FROM prom/prometheus:v2.1.0
+ADD prometheus.yml /etc/prometheus/
+
+```
+
+Конфигурация Prometheus происходит через файлы конфигурации и опции командной строки. В monitoring/prometheus создаем файл prometheus.yml:
+
+```shell
+
+---
+global:
+  scrape_interval: '5s'
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets:
+        - 'localhost:9090'
+
+  - job_name: 'ui'
+    static_configs:
+      - targets:
+        - 'ui:9292'
+
+  - job_name: 'comment'
+    static_configs:
+      - targets:
+        - 'comment:9292'
+
+```
+
+Prometheus поднимаем совместно с микросервисами. В docker/docker-compose.yml опишем новый сервис:
+
+```shell
+
+services:
+
+...
+
+  prometheus:
+    image: ${USER_NAME}/prometheus
+    ports:
+      - 9090:9090
+    volumes:
+      - prometheus_data:/prometheus
+    command:
+    # Передаем доп параметры вкомандной строке
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention=1d' # Задаем время хранения метрик в 1 день
+    networks:
+      - front_net
+      - back_net
+...
+
+  volumes:
+    prometheus_data:
+
+```
+
+Изменим build образов наших микросервисом на уже подготовленные образы через скрипт docker_build.sh:
+
+```shell
+
+  #build: ./ui
+  #image: ${USERNAME}/ui:${UI_TAG}
+
+  image: ${USER_NAME}/ui
+
+```
+
+Поднимаем сервисы. Поскольку в предыдущих заданиях был использован docker-compose.override.yml, то игнорируем его при запуске:
+
+```shell
+
+docker-compose -f docker-compose.yml up -d
+
+```
+
+Убедимся, что сервисы (контейнеры) поднялись:
+
+```shell
+
+docker-compose ps
+
+       Name                      Command               State                    Ports
+-------------------------------------------------------------------------------------------------------
+docker_comment_1      puma                             Up
+docker_post_1         python3 post_app.py              Up
+docker_post_db_1      docker-entrypoint.sh mongod      Up      27017/tcp
+docker_prometheus_1   /bin/prometheus --config.f ...   Up      0.0.0.0:9090->9090/tcp,:::9090->9090/tcp
+docker_ui_1           puma                             Up      0.0.0.0:9292->9292/tcp,:::9292->9292/tcp
+
+```
+
+## Exporters
+
+Экспортер похож на вспомогательного агента для сбора метрик.
+
+В ситуациях, когда мы не можем реализовать отдачу метрик Prometheus в коде приложения, мы можем использовать экспортер, который будет транслировать метрики приложения или системы в формате доступном для чтения Prometheus.
+
+Для сбора информации о работе Docker хоста и представления этой информации в Prometheus воспользуемся Node exporter.
+
+Определим ещё один сервиc в docker/docker-compose.yml:
+
+```shell
+
+node-exporter:
+  image: prom/node-exporter:v0.15.2
+  user: root
+  volumes:
+    - /proc:/host/proc:ro
+    - /sys:/host/sys:ro
+    - /:/rootfs:ro
+  command:
+    - '--path.procfs=/host/proc'
+    - '--path.sysfs=/host/sys'
+    - '--collector.filesystem.ignored-mount-points="^/(sys|proc|dev|host|etc)($$|/)"'
+  networks:
+    - front_net
+    - back_net
+
+```
+
+И в monitoring/prometheus/prometheus.yml добавим job для node exporter:
+
+```shell
+
+- job_name: 'node'
+  static_configs:
+    - targets:
+      - 'node-exporter:9100'
+
+```
+
+Соберем новый Docker образ для Prometheus:
+
+```shell
+
+cd monitoring/prometheus
+
+docker build -t $USER_NAME/prometheus .
+
+```
+
+Пересоздадим сервисы:
+
+```shell
+
+cd ../../docker/
+docker-compose down
+docker-compose -f docker-compose.yml up -d
+
+```
+
+Убедимся, что список endpoint-ов Prometheus появился ещё один endpoint - node.
+
+![image 1](https://github.com/Otus-DevOps-2021-05/IvanPrivalov_microservices/blob/monitoring-1/monitoring/Screenshot_4.png)
+
+Добавим нагрузки на Docker Host и проверм:
+
+```shell
+
+docker-machine ssh docker-host
+
+yes > /dev/null
+
+```
+
+![image 2](https://github.com/Otus-DevOps-2021-05/IvanPrivalov_microservices/blob/monitoring-1/monitoring/Screenshot_5.png)
+
+## Обазы в DockerHub
+
+```shell
+
+docker login
+Login Succeeded
+
+
+docker push $USER_NAME/ui
+docker push $USER_NAME/comment
+docker push $USER_NAME/post
+docker push $USER_NAME/prometheus
+
+```
+
+Ссылка на DockerHub: https://hub.docker.com/u/privalovip
+
+# Задания со *
+
+## MongoDB Exporter
+
+Соберем Docker образ нашего mongodb_exporter через monitoring/mongodb-exporter/Dockerfile
+
+```shell
+
+FROM alpine:3.14
+
+WORKDIR /tmp/mongodb
+RUN   apk update \
+  &&   apk --no-cache add ca-certificates wget \
+  &&   update-ca-certificates
+
+RUN wget https://github.com/percona/mongodb_exporter/releases/download/v0.20.7/mongodb_exporter-0.20.7.linux-amd64.tar.gz && \
+    tar xvzf mongodb_exporter-0.20.7.linux-amd64.tar.gz && \
+    cp mongodb_exporter-0.20.7.linux-amd64/mongodb_exporter /usr/local/bin/. && \
+    rm -rf /tmp/mongodb
+
+WORKDIR /
+
+EXPOSE 9216
+
+CMD ["mongodb_exporter"]
+
+```
+
+Далее добавим наш экпортер в monitoring/prometheus/prometheus.yml:
+
+```shell
+
+  - job_name: 'mongodb'
+    static_configs:
+      - targets:
+        - 'mongodb-exporter:9216'
+
+```
+
+и docker/docker-compose.yml:
+
+```shell
+
+  mongodb-exporter:
+    image: ${USER_NAME}/mongodb-exporter
+    environment:
+      MONGODB_URI: mongodb://post_db:27017
+    networks:
+      - back_net
+
+```
+
+Соберем заново наши образы и контейнеры:
+
+```shell
+
+cd monitoring/mongodb-exporter
+docker build -t $USER_NAME/mongodb-exporter .
+
+cd monitoring/prometheus
+docker build -t $USER_NAME/prometheus .
+
+cd ../../docker/
+docker-compose down
+docker-compose -f docker-compose.yml up -d
+
+```
+
+![image 3](https://github.com/Otus-DevOps-2021-05/IvanPrivalov_microservices/blob/monitoring-1/monitoring/Screenshot_6.png)
+
+# Удалим ресурсы:
+
+```shell
+
+docker-compose down
+yc compute instance delete docker-host
+
+```
 
 # Домашнее задание №15
 ____
