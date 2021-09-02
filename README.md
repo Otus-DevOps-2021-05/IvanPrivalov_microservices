@@ -1,6 +1,261 @@
 # IvanPrivalov_microservices
 IvanPrivalov microservices repository
 
+# Домашнее задание №15
+____
+
+## Устройство GitLab CI. Построение процесса непрерывной поставки.
+
+1. Создал инстанс для gitlab через Web-консоль Yandex Cloud.
+
+```shell
+
+yc compute instance create \
+  --name gitlab-ci-vm \
+  --zone ru-central1-a \
+  --network-interface subnet-name=otus-ru-central1-a,nat-ip-version=ipv4 \
+  --create-boot-disk image-folder-id=standard-images,image-family=ubuntu-1804-lts,size=50 \
+  --memory 4GB \
+  --ssh-key ~/.ssh/id_rsa.pub
+
+```
+
+2. Установим docker и docker-compose
+
+```shell
+
+cd gitlab-ci/ansible/
+ansible-playbook docker_playbook.yml
+
+```
+
+3. Установка GitLab-CE. Подключимся к хосту и создадим необходимые каталоги:
+
+```shell
+
+ssh yc-user@62.84.113.255
+sudo mkdir -p /srv/gitlab/config /srv/gitlab/data /srv/gitlab/logs
+cd /srv/gitlab
+sudo touch docker-compose.yml
+
+```
+
+sudo vim docker-compose.yml
+
+```shell
+
+web:
+  image: 'gitlab/gitlab-ce:latest'
+  restart: always
+  hostname: 'localhost'
+  environment:
+    GITLAB_OMNIBUS_CONFIG:
+      external_url 'http://62.84.113.255'
+  ports:
+    - '80:80'
+    - '443:443'
+    - '2222:22'
+  volumes:
+    - '/srv/gitlab/config:/etc/gitlab'
+    - '/srv/gitlab/logs:/var/log/gitlab'
+    - '/srv/gitlab/data:/var/opt/gitlab'
+
+```
+
+4. Запустим gitlab через docker-compose:
+
+```shell
+
+sudo docker-compose up -d
+
+```
+
+проверим доступность: http://62.84.113.255
+
+5. Для выполнения push с локального хоста в gitlab добавил remote:
+
+```shell
+
+git remote add gitlab http://62.84.113.255/homework/example.git
+git push gitlab gitlab-ci-1
+
+```
+
+6. Создание раннеров. Добавил раннер на инстансе:
+
+```shell
+
+ssh yc-user@62.84.113.255
+
+docker run -d --name gitlab-runner --restart always -v /srv/gitlabrunner/config:/etc/gitlab-runner -v /var/run/docker.sock:/var/run/docker.sock gitlab/gitlab-runner:latest
+
+```
+
+7. Регистрация раннера (указываем url сервера gitlab и токен из Settings -> CI/CD -> Pipelines -> Runners ):
+
+```shell
+
+docker exec -it gitlab-runner gitlab-runner register \
+--url http://62.84.113.255/ \
+--non-interactive \
+--locked=false \
+--name DockerRunner \
+--executor docker \
+--docker-image alpine:latest \
+--registration-token gYhPxcY9s5pBQyr6MGYp \
+--tag-list "linux,xenial,ubuntu,docker" \
+--run-untagged
+
+```
+
+8. Если все успешно, то должен появится новый ранер в Settings -> CI/CD -> Pipelines -> Runners секция Available specific runners и после появления ранера должен выполнится пайплайн.
+
+![image 1](https://github.com/Otus-DevOps-2021-05/IvanPrivalov_microservices/blob/gitlab-ci-1/gitlab-ci/Screenshot_1.png)
+
+9. Добавление Reddit в проект:
+
+```shell
+
+git clone https://github.com/express42/reddit.git && rm -rf ./reddit/.git
+git add reddit/
+git commit -m "Add reddit app"
+git push gitlab gitlab-ci-1
+
+```
+
+10. Добавил файл simpletest.rb с тестами в каталог reddit:
+
+```shell
+
+require_relative './app'
+require 'test/unit'
+require 'rack/test'
+
+set :environment, :test
+
+class MyAppTest < Test::Unit::TestCase
+  include Rack::Test::Methods
+
+  def app
+    Sinatra::Application
+  end
+
+  def test_get_request
+    get '/'
+    assert last_response.ok?
+  end
+end
+
+```
+
+11. Добавим библиотеку rack-test в reddit/Gemfile:
+
+```shell
+
+gem 'rack-test'
+
+```
+
+12. Запушим код в GitLab и убедимся, что test_unit_job гоняет тесты.
+
+![image 2](https://github.com/Otus-DevOps-2021-05/IvanPrivalov_microservices/blob/gitlab-ci-1/gitlab-ci/Screenshot_2.png)
+
+13. Добавим в .gitlab-ci.yml новые окружения и условия запусков для ранеров:
+
+```shell
+
+image: ruby:2.4.2
+
+stages:
+  - build
+  - test
+  - review
+  - stage
+  - production
+
+variables:
+  DATABASE_URL: 'mongodb://mongo/user_posts'
+
+before_script:
+  - cd reddit
+  - bundle install
+
+build_job:
+  stage: build
+  script:
+    - echo 'Building'
+
+test_unit_job:
+  stage: test
+  services:
+    - mongo:latest
+  script:
+    - ruby simpletest.rb
+
+test_integration_job:
+  stage: test
+  script:
+    - echo 'Testing 2'
+
+deploy_dev_job:
+  stage: review
+  script:
+    - echo 'Deploy'
+  environment:
+    name: dev
+    url: http://dev.example.com
+
+branch review:
+  stage: review
+  script: echo "Deploy to $CI_ENVIRONMENT_SLUG"
+  environment:
+    name: branch/$CI_COMMIT_REF_NAME
+    url: http://$CI_ENVIRONMENT_SLUG.example.com
+  only:
+    - branches
+  except:
+    - master
+
+staging:
+  stage: stage
+  when: manual
+  only:
+    - /^\d+\.\d+\.\d+/
+  script:
+    - echo 'Deploy'
+  environment:
+    name: stage
+    url: http://beta.example.com
+
+production:
+  stage: production
+  when: manual
+  only:
+    - /^\d+\.\d+\.\d+/
+  script:
+    - echo 'Deploy'
+  environment:
+    name: production
+    url: http://example.com
+
+```
+
+14. Для проверки закоммитим файлы с указанием тэга (версии) и запушим в gitlab:
+
+```shell
+
+git add .
+git commit -m 'Test ver 2.4.10'
+git tag 2.4.10
+git push gitlab gitlab-ci-1 --tags
+
+```
+
+![image 3](https://github.com/Otus-DevOps-2021-05/IvanPrivalov_microservices/blob/gitlab-ci-1/gitlab-ci/Screenshot_3.png)
+
+Stage и Production окружения запускаются вручную
+
+
 # Домашнее задание №14
 ____
 
