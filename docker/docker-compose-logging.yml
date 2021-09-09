@@ -1,0 +1,60 @@
+version: '3'
+services:
+
+  zipkin:
+    env_file: .env
+    image: openzipkin/zipkin:2.21.0
+    ports:
+      - "9411:9411"
+    networks:
+      - front_net
+      - back_net
+
+  fluentd:
+    env_file: .env
+    image: ${USER_NAME}/fluentd
+    ports:
+      - "24224:24224"
+      - "24224:24224/udp"
+    networks:
+      - front_net
+      - back_net
+
+  elasticsearch:
+    env_file: .env
+    image: elasticsearch:7.4.0
+    environment:
+      - ELASTIC_CLUSTER=false
+      - CLUSTER_NODE_MASTER=true
+      - CLUSTER_MASTER_NODE_NAME=es01
+      - discovery.type=single-node
+    expose:
+      - 9200
+    ports:
+      - "9200:9200"
+    networks:
+      - front_net
+      - back_net
+
+  kibana:
+    env_file: .env
+    image: kibana:7.4.0
+    ports:
+      - "5601:5601"
+    networks:
+      - front_net
+      - back_net
+
+networks:
+  front_net:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: ${FRONT_NET_SUBNET}
+  back_net:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: ${BACK_NET_SUBNET}
