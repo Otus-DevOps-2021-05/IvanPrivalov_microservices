@@ -1,6 +1,243 @@
 # IvanPrivalov_microservices
 IvanPrivalov microservices repository
-# Домашнее задание №16
+
+# Домашнее задание №18
+____
+
+## Логгирование и распределенная трассировка
+____
+
+- Логирование Docker-контейнеров
+- Сбор неструктурированных логов
+- Визуализация логов
+- Сбор структурированных логов
+- Распределенный трейсинг
+
+### Описание
+
+1. Создал инстанс в Yandex Cloud c помощью docker-machine:
+
+```shell
+
+yc compute instance create \
+  --name logging \
+  --zone ru-central1-a \
+  --network-interface subnet-name=otus-ru-central1-a,nat-ip-version=ipv4 \
+  --create-boot-disk image-folder-id=standard-images,image-family=ubuntu-1804-lts,size=15 \
+  --memory=4 \
+  --ssh-key ~/.ssh/id_rsa.pub
+
+docker-machine create \
+  --driver generic \
+  --generic-ip-address=178.154.254.210 \
+  --generic-ssh-user yc-user \
+  --generic-ssh-key ~/.ssh/id_rsa \
+  logging
+
+# перейти в окружение docker хоста
+eval $(docker-machine env docker-host)
+
+```
+
+2. Собрал новые образы сервисов reddit с функционалом логгирования, а также fluentd
+
+3. Описал сервисы в docker-compose:
+
+docker-compose.yml - сервисы приложения reddit
+
+```shell
+
+version: '3.3'
+services:
+
+  post_db:
+    env_file: .env
+    image: mongo:${MONGODB_VERSION}
+    environment:
+      - ZIPKIN_ENABLED=${ZIPKIN_ENABLED}
+    volumes:
+      - post_db:/data/db
+    networks:
+      back_net:
+        aliases:
+          - post_db
+          - comment_db
+
+  ui:
+    env_file: .env
+#    build: ./ui
+#    image: ${USER_NAME}/ui:${UI_VERSION}
+    image: ${USER_NAME}/ui:logging
+    environment:
+      - ZIPKIN_ENABLED=${ZIPKIN_ENABLED}
+    ports:
+      - ${UI_HOST_PORT}:${UI_CONTAINER_PORT}/tcp
+    logging:
+      driver: "fluentd"
+      options:
+        fluentd-address: localhost:24224
+        tag: service.ui
+    networks:
+      - front_net
+
+  post:
+    env_file: .env
+#    build: ./post-py
+#    image: ${USER_NAME}/post:${POST_VERSION}
+    image: ${USER_NAME}/post:logging
+    environment:
+      - POST_DATABASE_HOST=post_db
+      - POST_DATABASE=posts
+      - ZIPKIN_ENABLED=${ZIPKIN_ENABLED}
+    depends_on:
+      - post_db
+    ports:
+      - "5000:5000"
+    logging:
+      driver: "fluentd"
+      options:
+        fluentd-address: localhost:24224
+        tag: service.post
+    networks:
+      - front_net
+      - back_net
+
+  comment:
+    env_file: .env
+#    build: ./comment
+#    image: ${USER_NAME}/comment:${COMMENT_VERSION}
+    image: ${USER_NAME}/comment:logging
+    environment:
+      - ZIPKIN_ENABLED=${ZIPKIN_ENABLED}
+    networks:
+      - front_net
+      - back_net
+
+volumes:
+
+  post_db:
+
+networks:
+
+  front_net:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: ${FRONT_NET_SUBNET}
+
+  back_net:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: ${BACK_NET_SUBNET}
+
+```
+
+docker-compose-logging.yml - сервисы логгирования:
+
+- elasticsearch
+- kibana
+- fluentd
+- zipkin
+
+```shell
+
+version: '3'
+services:
+
+  zipkin:
+    env_file: .env
+    image: openzipkin/zipkin:2.21.0
+    ports:
+      - "9411:9411"
+    networks:
+      - front_net
+      - back_net
+
+  fluentd:
+    env_file: .env
+    image: ${USER_NAME}/fluentd
+    ports:
+      - "24224:24224"
+      - "24224:24224/udp"
+    networks:
+      - front_net
+      - back_net
+
+  elasticsearch:
+    env_file: .env
+    image: elasticsearch:7.4.0
+    environment:
+      - ELASTIC_CLUSTER=false
+      - CLUSTER_NODE_MASTER=true
+      - CLUSTER_MASTER_NODE_NAME=es01
+      - discovery.type=single-node
+    expose:
+      - 9200
+    ports:
+      - "9200:9200"
+    networks:
+      - front_net
+      - back_net
+
+  kibana:
+    env_file: .env
+    image: kibana:7.4.0
+    ports:
+      - "5601:5601"
+    networks:
+      - front_net
+      - back_net
+
+networks:
+  front_net:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: ${FRONT_NET_SUBNET}
+  back_net:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: ${BACK_NET_SUBNET}
+
+```
+
+### Запуск
+
+```shell
+
+cd docker
+eval "(docker-machine env logging)"
+docker-compose -f docker-compose-logging.yml up -d
+docker-compose -f docker-compose.yml up -d
+docker-compose -f docker-compose-logging.yml -f docker-compose.yml ps
+
+otus@otus-VirtualBox:~/Desktop/IvanPrivalov_microservices/docker$ docker-compose -f docker-compose-logging.yml -f docker-compose.yml ps
+         Name                       Command               State                                          Ports
+------------------------------------------------------------------------------------------------------------------------------------------------------
+docker_comment_1         puma                             Up
+docker_elasticsearch_1   /usr/local/bin/docker-entr ...   Up      0.0.0.0:9200->9200/tcp,:::9200->9200/tcp, 9300/tcp
+docker_fluentd_1         tini -- /bin/entrypoint.sh ...   Up      0.0.0.0:24224->24224/tcp,:::24224->24224/tcp,
+                                                                  0.0.0.0:24224->24224/udp,:::24224->24224/udp, 5140/tcp
+docker_kibana_1          /usr/local/bin/dumb-init - ...   Up      0.0.0.0:5601->5601/tcp,:::5601->5601/tcp
+docker_post_1            python3 post_app.py              Up      0.0.0.0:5000->5000/tcp,:::5000->5000/tcp
+docker_post_db_1         docker-entrypoint.sh mongod      Up      27017/tcp
+docker_ui_1              puma                             Up      0.0.0.0:9292->9292/tcp,:::9292->9292/tcp
+docker_zipkin_1          /busybox/sh run.sh               Up      9410/tcp, 0.0.0.0:9411->9411/tcp,:::9411->9411/tcp
+
+```
+
+Проверка:
+
+- kibana - http://178.154.254.210:5601
+- zipkin - http://178.154.254.210:9411
+
+# Домашнее задание №17
 ____
 
 ## Введение в мониторинг. Системы мониторинга.
@@ -347,7 +584,7 @@ yc compute instance delete docker-host
 
 ```
 
-# Домашнее задание №15
+# Домашнее задание №16
 ____
 
 ## Устройство GitLab CI. Построение процесса непрерывной поставки.
@@ -602,7 +839,7 @@ git push gitlab gitlab-ci-1 --tags
 Stage и Production окружения запускаются вручную
 
 
-# Домашнее задание №14
+# Домашнее задание №15
 ____
 
 ## Docker: сети, docker-compose
