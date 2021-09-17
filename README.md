@@ -206,7 +206,6 @@ fhmqce4m84fj6t84gc2p   Ready    <none>   83s     v1.19.14
 
 
 ## Логирование и распределенная трассировка
-____
 
 <details>
   <summary>Решение</summary>
