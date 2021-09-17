@@ -2,11 +2,9 @@
 IvanPrivalov microservices repository
 
 # Kubernetes 1
-____
 
 <details>
   <summary>Решение</summary>
-```
 
 ## Создание примитивов
 
@@ -204,8 +202,6 @@ fhmqce4m84fj6t84gc2p   Ready    <none>   83s     v1.19.14
 
 ```
 
-```
-
 </details>
 
 
@@ -214,7 +210,6 @@ ____
 
 <details>
   <summary>Решение</summary>
-```
 
 - Логирование Docker-контейнеров
 - Сбор неструктурированных логов
@@ -445,8 +440,6 @@ docker_zipkin_1          /busybox/sh run.sh               Up      9410/tcp, 0.0.
 
 - kibana - http://178.154.254.210:5601
 - zipkin - http://178.154.254.210:9411
-
-```
 
 </details>
 
