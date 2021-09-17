@@ -1,7 +1,7 @@
 # IvanPrivalov_microservices
 IvanPrivalov microservices repository
 
-# Kubernetes 1
+## Kubernetes 1
 
 <details>
   <summary>Решение</summary>
@@ -205,7 +205,7 @@ fhmqce4m84fj6t84gc2p   Ready    <none>   83s     v1.19.14
 </details>
 
 
-# Логирование и распределенная трассировка
+## Логирование и распределенная трассировка
 ____
 
 <details>
@@ -443,7 +443,7 @@ docker_zipkin_1          /busybox/sh run.sh               Up      9410/tcp, 0.0.
 
 </details>
 
-# Введение в мониторинг. Системы мониторинга (Prometheus)
+## Введение в мониторинг. Системы мониторинга (Prometheus)
 
 <details>
   <summary>Решение</summary>
@@ -791,7 +791,7 @@ yc compute instance delete docker-host
 
 </details>
 
-# Устройство GitLab CI. Построение процесса непрерывной поставки.
+## Устройство GitLab CI. Построение процесса непрерывной поставки.
 
 <details>
   <summary>Решение</summary>
@@ -1047,7 +1047,7 @@ Stage и Production окружения запускаются вручную
 
 </details>
 
-# Docker - 4: сети, docker-compose
+## Docker - 4: сети, docker-compose
 
 <details>
   <summary>Решение</summary>
@@ -1449,7 +1449,7 @@ Gemfile       config.ru     middleware.rb    views
 
 </details>
 
-# Docker - 3
+## Docker - 3
 
 <details>
   <summary>Решение</summary>
@@ -1753,7 +1753,7 @@ fb859ce405c8   privalovip/post:1.0        "python3 post_app.py"    About an hour
 
 </details>
 
-# Docker - 2
+## Docker - 2
 
 <details>
   <summary>Решение</summary>
