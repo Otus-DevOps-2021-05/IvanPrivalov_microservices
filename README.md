@@ -1,6 +1,213 @@
 # IvanPrivalov_microservices
 IvanPrivalov microservices repository
 
+# Kubernetes 1
+____
+
+<details>
+  <summary>Решение</summary>
+```
+
+## Создание примитивов
+
+Создал файл в kubernetes/reddit/post-deployment.yml:
+
+```shell
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: post-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: post
+  template:
+    metadata:
+      name: post
+      labels:
+        app: post
+    spec:
+      containers:
+      - image: chromko/post
+        name: post
+
+```
+
+Аналогично создаем:
+
+- ui-deployment.yml
+- comment-deployment.yml
+- mongo-deployment.yml
+
+## Установка k8s при помощи утилиты kubeadm
+
+Создаем 2 ноды Ubuntu 18:
+
+```shell
+
+yc compute instance create \
+  --name master \
+  --zone ru-central1-a \
+  --network-interface subnet-name=otus-ru-central1-a,nat-ip-version=ipv4 \
+  --create-boot-disk image-folder-id=standard-images,image-family=ubuntu-1804-lts,size=40 \
+  --memory=4 \
+  --cores=4 \
+  --ssh-key ~/.ssh/id_rsa.pub
+
+yc compute instance create \
+  --name worker \
+  --zone ru-central1-a \
+  --network-interface subnet-name=otus-ru-central1-a,nat-ip-version=ipv4 \
+  --create-boot-disk image-folder-id=standard-images,image-family=ubuntu-1804-lts,size=40 \
+  --memory=4 \
+  --cores=4 \
+  --ssh-key ~/.ssh/id_rsa.pub
+
+```
+
+Устанавливаем: docker v=19.03 и k8s v=1.19:
+
+```shell
+
+sudo apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release
+
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+sudo curl -fsSLo /usr/share/keyrings/kubernetes-archive-keyring.gpg https://packages.cloud.google.com/apt/doc/apt-key.gpg
+
+echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+echo "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+
+sudo apt-get update
+
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io kubelet kubeadm kubectl
+
+sudo apt-get install docker-ce=5:19.03.15~3-0~ubuntu-bionic docker-ce-cli=5:19.03.15~3-0~ubuntu-bionic containerd.io kubelet=1.19.14-00 kubeadm=1.19.14-00 kubectl=1.19.14-00
+
+```
+
+Поднимем кластер k8s с помощью kubeadm:
+
+```shell
+
+kubeadm init --apiserver-cert-extra-sans=178.154.204.64 --apiserver-advertise-address=0.0.0.0 --control-plane-endpoint=178.154.204.64 --pod-network-cidr=10.244.0.0/16
+
+```
+
+Послу успешной установки получим пример команды для добавления worker ноды в кластер:
+
+```shell
+
+kubeadm join 178.154.204.64:6443 --token affw0g.fdckmh8digy48n9e \
+    --discovery-token-ca-cert-hash sha256:3c01bf311db86349eb128a3d461f14b09811f8032e97e11391dd17e58c458588
+
+```
+
+Создадим конфиг файл для пользователя на мастер ноде:
+
+```shell
+
+mkdir $HOME/.kube/
+sudo cp /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $USER $HOME/.kube/config
+
+```
+
+Проверим наши ноды:
+
+```shell
+
+root@fhmch8e4qjpi9o55vrj2:~# kubectl get nodes
+NAME                   STATUS     ROLES    AGE     VERSION
+fhm7j2sia4bub0vp6ss0   NotReady   <none>   3m36s   v1.19.14
+fhmch8e4qjpi9o55vrj2   NotReady   master   4m13s   v1.19.14
+
+```
+
+Ноды находятся в статусе NotReady, посмотрим состояние ноды:
+
+```shell
+
+kubectl describe node fhm7j2sia4bub0vp6ss0
+
+NetworkReady=false reason:NetworkPluginNotReady message:docker: network plugin is not ready: cni config uninitialized
+
+```
+
+Не установлен сетевой плагин. Установим сетевой плагин calico:
+
+```shell
+
+curl https://docs.projectcalico.org/manifests/calico.yaml -O
+
+раскомментируем переменную CALICO_IPV4POOL_CIDR в манифесте и установить для нее значение init: 10.244.0.0/16
+
+kubectl apply -f calico.yaml
+
+```
+
+Проверим состояние нод:
+
+```shell
+
+root@fhmch8e4qjpi9o55vrj2:~# kubectl get nodes
+NAME                   STATUS   ROLES    AGE   VERSION
+fhm7j2sia4bub0vp6ss0   Ready    <none>   15m   v1.19.14
+fhmch8e4qjpi9o55vrj2   Ready    master   16m   v1.19.14
+
+```
+
+Запустим один из манифестов нашего приложения и убедимся, что он применяется:
+
+```shell
+
+kubectl apply -f post-deployment.yml
+
+NAME                              READY   STATUS              RESTARTS   AGE
+post-deployment-799c77ffb-mvgpr   0/1     ContainerCreating   0          20s
+
+```
+
+## Установка кластера k8s с помощью terraform и ansible
+
+- В каталоге kubernetes созданы каталоги terraform и ansible. В данных каталогах созданы манифесты.
+
+- Terraform динамически создает необходимое количество нод.
+
+- Ansible с помощью ролей разворачивает Kubernetes кластер.
+
+- Версии k8s и docker зафиксированы через переменные на 1.19 и 19.03 соответсвенно.
+
+- В Terraform настроен provisioner для автоматического разворачивания кластера через ansible-playbook.
+
+```shell
+
+cd ./kubernetes/terraform
+terraform init
+terraform plan
+terraform apply
+
+```
+
+Подключимся к master и проверим состояние нод:
+
+```shell
+
+ssh ubuntu@178.154.254.67
+
+ubuntu@fhmbsupuro805qiu3etr:~$ kubectl get nodes
+NAME                   STATUS   ROLES    AGE     VERSION
+fhmbsupuro805qiu3etr   Ready    master   4m17s   v1.19.14
+fhmqce4m84fj6t84gc2p   Ready    <none>   83s     v1.19.14
+
+```
+
+```
+
+</details>
+
 # Домашнее задание №18
 ____
 

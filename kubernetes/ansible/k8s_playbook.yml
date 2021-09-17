@@ -1,0 +1,19 @@
+---
+- name: Deploy k8s on master
+  hosts: master
+  become: true
+
+  roles:
+    - docker
+    - k8s
+    - master_init
+    - calico
+
+- name: Deploy k8s on worker
+  hosts: workers
+  become: true
+
+  roles:
+    - docker
+    - k8s
+    - add_worker
