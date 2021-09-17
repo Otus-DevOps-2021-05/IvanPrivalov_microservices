@@ -443,11 +443,10 @@ docker_zipkin_1          /busybox/sh run.sh               Up      9410/tcp, 0.0.
 
 </details>
 
-# Домашнее задание №17
-____
+# Введение в мониторинг. Системы мониторинга (Prometheus)
 
-## Введение в мониторинг. Системы мониторинга.
-____
+<details>
+  <summary>Решение</summary>
 
 1. Prometheus: запуск, конфигурация, Web UI
 2. Мониторинг состояния микросервисов
@@ -790,10 +789,12 @@ yc compute instance delete docker-host
 
 ```
 
-# Домашнее задание №16
-____
+</details>
 
-## Устройство GitLab CI. Построение процесса непрерывной поставки.
+# Устройство GitLab CI. Построение процесса непрерывной поставки.
+
+<details>
+  <summary>Решение</summary>
 
 1. Создал инстанс для gitlab через Web-консоль Yandex Cloud.
 
@@ -1044,11 +1045,12 @@ git push gitlab gitlab-ci-1 --tags
 
 Stage и Production окружения запускаются вручную
 
+</details>
 
-# Домашнее задание №15
-____
+# Docker - 4: сети, docker-compose
 
-## Docker: сети, docker-compose
+<details>
+  <summary>Решение</summary>
 
 - Работа с сетями в Docker
 - Использование docker-compose
@@ -1445,9 +1447,12 @@ Gemfile       config.ru     middleware.rb    views
 
 Приложение доступно по адресу: http://localhost:9292
 
+</details>
 
-# Домашнее задание №13
-____
+# Docker - 3
+
+<details>
+  <summary>Решение</summary>
 
 - описываем и собираем Docker-образ для сервисного приложения;
 - оптимизируем Docker-образы;
@@ -1746,11 +1751,12 @@ fb859ce405c8   privalovip/post:1.0        "python3 post_app.py"    About an hour
 Проверяем, что приложение доступно по ссылке: http://<Публичный IP "docker-host">:9292
 В моем случае: http://178.154.223.190:9292/
 
-# Домашнее задание №12
-____
+</details>
 
-## В ДЗ сделано:
-____
+# Docker - 2
+
+<details>
+  <summary>Решение</summary>
 
 1. Установил последние версии docker, docker-compose, docker-machine
 
@@ -2154,3 +2160,5 @@ PLAY RECAP *********************************************************************
 
 Проверяем запуск приложения на каждом инстансе по ссылке:
 http://<Публичный IP>:9292 (актуальные ip-адреса для проверки находятся в inventory.ini)
+
+</details>
