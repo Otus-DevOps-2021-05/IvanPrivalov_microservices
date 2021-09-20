@@ -1,0 +1,15 @@
+---
+k8s_required_packages:
+  - apt-transport-https
+  - ca-certificates
+  - curl
+
+k8s_version: 1.19.14-00
+
+k8s_key: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+k8s_repo: "deb https://apt.kubernetes.io/ kubernetes-xenial main"
+k8s_packages:
+  - kubelet={{ k8s_version }}
+  - kubeadm={{ k8s_version }}
+  - kubectl={{ k8s_version }}
+k8s_user: ubuntu

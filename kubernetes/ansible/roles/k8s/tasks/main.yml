@@ -1,0 +1,24 @@
+---
+- name: Update repositories and install required packages
+  apt:
+    name: "{{ item }}"
+    state: present
+    update_cache: yes
+  loop: "{{ k8s_required_packages }}"
+
+- name: Add Google Cloud public signing key
+  apt_key:
+    url: "{{ k8s_key }}"
+    state: present
+
+- name: Add the Kubernetes apt repository
+  apt_repository:
+    repo: "{{ k8s_repo }}"
+    state: present
+
+- name: Install Kubernetes binaries
+  apt:
+    pkg: "{{ item }}"
+    update_cache: yes
+    force: true
+  loop: "{{ k8s_packages }}"

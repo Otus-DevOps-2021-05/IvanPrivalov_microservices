@@ -1,0 +1,6 @@
+---
+k8s_apiserver_cert_extra_sans: "{{ ansible_host }}"
+k8s_apiserver_advertise_address: "0.0.0.0"
+k8s_control_plane_endpoint: "{{ ansible_host }}"
+k8s_pod_network_cidr: 10.244.0.0/16
+k8s_user: "{{ ansible_user }}"

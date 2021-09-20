@@ -1,0 +1,27 @@
+---
+- name: Check if Calico add-on has been already installed
+  become: false
+  shell: kubectl get pods --all-namespaces
+  changed_when: False
+  register: calico_info
+
+- name: Create directory for k8s add-ons
+  file:
+    path: "/home/{{ k8s_user }}/k8s_addons"
+    state: directory
+    owner: "{{ k8s_user }}"
+    group: "{{ k8s_user }}"
+    mode: 0770
+
+- name: Copy Pod network add-on yml file
+  template:
+    src: calico.yaml.j2
+    dest: "/home/{{ k8s_user }}/k8s_addons/calico.yaml"
+    owner: "{{ k8s_user }}"
+    group: "{{ k8s_user }}"
+    mode: 0660
+
+- name: Install calico pod network
+  become: false
+  shell: "kubectl apply -f /home/{{ k8s_user }}/k8s_addons/calico.yaml"
+  when: '"calico" not in calico_info.stdout'
