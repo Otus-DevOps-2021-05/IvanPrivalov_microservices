@@ -109,7 +109,7 @@ minikube service list
 
 ```
 
-![image 1](https://github.com/Otus-DevOps-2021-05/IvanPrivalov_microservices/blob/kubernetes/screens/k8s_1.png)
+![image 1](https://github.com/Otus-DevOps-2021-05/IvanPrivalov_microservices/blob/kubernetes-2/kubernetes/screens/k8s_1.png)
 
 
 ### Dashboard
@@ -162,7 +162,7 @@ minikube service ui -n dev
 
 ```
 
-![image 2](https://github.com/Otus-DevOps-2021-05/IvanPrivalov_microservices/blob/kubernetes/screens/k8s_2.png)
+![image 2](https://github.com/Otus-DevOps-2021-05/IvanPrivalov_microservices/blob/kubernetes-2/kubernetes/screens/k8s_2.png)
 
 ### Yandex Cloud Managed Service for kubernetes
 
@@ -260,7 +260,7 @@ NodePort:                 <unset>  32093/TCP
 
 ```
 
-![image 3](https://github.com/Otus-DevOps-2021-05/IvanPrivalov_microservices/blob/kubernetes/screens/k8s_3.png)
+![image 3](https://github.com/Otus-DevOps-2021-05/IvanPrivalov_microservices/blob/kubernetes-2/kubernetes/screens/k8s_3.png)
 
 ### Разверните Kubernetes-кластер в Yandex cloud с помощью Terraform
 
@@ -322,7 +322,7 @@ cl1hh42o2998dfbupaim-ivox   Ready    <none>   7m43s   v1.19.10   10.128.0.28   6
 
 Приложение доступно по адресу http://178.154.240.237:32093/
 
-![image 4](https://github.com/Otus-DevOps-2021-05/IvanPrivalov_microservices/blob/kubernetes/screens/k8s_4.png)
+![image 4](https://github.com/Otus-DevOps-2021-05/IvanPrivalov_microservices/blob/kubernetes-2/kubernetes/screens/k8s_4.png)
 
 </details>
 
