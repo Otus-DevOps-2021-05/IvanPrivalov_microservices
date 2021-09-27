@@ -1,5 +1,330 @@
 # IvanPrivalov_microservices
 IvanPrivalov microservices repository
+## Kubernetes 2 (Запуск кластера и приложения. Модель безопасности)
+
+<details>
+  <summary>Решение</summary>
+
+### Разворачиваем Kubernetes локально
+
+```shell
+
+sudo apt-get update
+sudo apt-get install -y apt-transport-https ca-certificates curl
+
+sudo curl -fsSLo /usr/share/keyrings/kubernetes-archive-keyring.gpg https://packages.cloud.google.com/apt/doc/apt-key.gpg
+echo "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+
+sudo apt-get update
+sudo apt-get install -y kubectl
+
+```
+
+### Установка Minikube
+
+```shell
+
+curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube_latest_amd64.deb
+sudo dpkg -i minikube_latest_amd64.deb
+
+```
+
+Запустим Minikube-кластер (весрия 1.19.7):
+
+```shell
+
+minikube start --kubernetes-version 1.19.7
+
+```
+
+Minikube-кластер развернут.
+
+```shell
+
+otus@otus-VirtualBox:~$ kubectl get nodes
+NAME       STATUS   ROLES    AGE   VERSION
+minikube   Ready    master   43s   v1.19.7
+
+```
+
+### Запуск приложения
+
+Запуск приложения в kubernetes необходимо описать в YAML-манифестах.
+Вся конфигурация находится в каталоге ./kubernetes/reddit.
+
+Запустим на кластере minikube:
+
+```shell
+
+kubectl apply -f kubernetes/reddit/
+
+```
+
+По-умолчанию все сервисы имеют тип ClusterIP - это значит, что сервис располагается на внутреннем диапазоне IP-адресов кластера. Снаружи до него нет доступа. Тип NodePort - на каждой ноде кластера открывает порт из диапазона 30000-32767 и переправляет трафик с этого порта на тот, который указан в targetPort Pod.
+
+Опишем порт в ui-service.yml:
+
+```shell
+
+spec:
+  type: NodePort
+  ports:
+  - nodePort: 32092
+    port: 9292
+    protocol: TCP
+    targetPort: 9292
+  selector:
+    app: reddit
+    component: ui
+
+```
+
+Проверим:
+
+```shell
+
+minikube service ui
+
+|-----------|------|-------------|---------------------------|
+| NAMESPACE | NAME | TARGET PORT |            URL            |
+|-----------|------|-------------|---------------------------|
+| default   | ui   |        9292 | http://192.168.49.2:32092 |
+|-----------|------|-------------|---------------------------|
+🎉  Opening service default/ui in default browser...
+
+minikube service list
+
+|-------------|------------|--------------|---------------------------|
+|  NAMESPACE  |    NAME    | TARGET PORT  |            URL            |
+|-------------|------------|--------------|---------------------------|
+| default     | comment    | No node port |
+| default     | comment-db | No node port |
+| default     | kubernetes | No node port |
+| default     | mongodb    | No node port |
+| default     | post       | No node port |
+| default     | post-db    | No node port |
+| default     | ui         |         9292 | http://192.168.49.2:32092 |
+| kube-system | kube-dns   | No node port |
+|-------------|------------|--------------|---------------------------|
+
+```
+
+![image 1](https://github.com/Otus-DevOps-2021-05/IvanPrivalov_microservices/blob/kubernetes-2/kubernetes/screens/k8s_1.png)
+
+
+### Dashboard
+
+Зайдем в Dashboard:
+
+```shell
+
+minikube service kubernetes-dashboard -n kube-system
+
+```
+
+В самом Dashboard можно:
+
+- Отслеживать состояние кластера и рабочих нагрузок в нем
+- Создавать новые объекты (загружать YAML-файлы)
+- Удалять и изменять объекты (кол-во реплик, YAML-файлы)
+- Отслеживать логи в POD-ах
+- При включении Heapster-аддона смотреть нагрузку на POD-ах
+- и т. д.
+
+### Namespace
+
+Отделим среду для разработки приложения от всего остального кластера. Для этого создадим Namespace dev-namespace:
+
+```shell
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dev
+
+```
+
+Создаем Namespace и запустем приложение в нем:
+
+```shell
+
+kubectl apply -f dev-namespace.yml
+kubectl apply -n dev -f kubernetes/reddit/
+
+```
+
+Проверим результат:
+
+```shell
+
+minikube service ui -n dev
+
+```
+
+![image 2](https://github.com/Otus-DevOps-2021-05/IvanPrivalov_microservices/blob/kubernetes-2/kubernetes/screens/k8s_2.png)
+
+### Yandex Cloud Managed Service for kubernetes
+
+Создаем кластер и группу хостов. Подключаемся к кластеру:
+
+```shell
+
+yc managed-kubernetes cluster get-credentials test-cluster --external
+
+```
+
+Проверим подключение к нашему кластеру:
+
+```shell
+
+kubectl config current-context
+yc-test-cluster
+
+```
+
+Запустим наше приложение в K8s.
+
+Создадим dev namespace:
+
+```shell
+
+kubectl apply -f ./kubernetes/reddit/dev-namespace.yml
+
+```
+
+Задеплоим наше приложение:
+
+```shell
+
+kubectl apply -f ./kubernetes/reddit/ -n dev
+
+otus@otus-VirtualBox:~/Desktop/IvanPrivalov_microservices$ kubectl apply -f ./kubernetes/reddit/ -n dev
+deployment.apps/comment created
+service/comment-db created
+service/comment created
+namespace/dev unchanged
+deployment.apps/mongo created
+service/mongodb created
+deployment.apps/post created
+service/post-db created
+service/post created
+deployment.apps/ui created
+service/ui created
+
+```
+
+Проверим развернулись ли наши поды:
+
+```shell
+
+kubectl get pods -n dev
+
+otus@otus-VirtualBox:~/Desktop/IvanPrivalov_microservices$ kubectl get pods -n dev
+NAME                      READY   STATUS    RESTARTS   AGE
+comment-f8db99cc4-jx9hh   1/1     Running   0          3m9s
+comment-f8db99cc4-rh7qc   1/1     Running   0          3m9s
+comment-f8db99cc4-sm7q2   1/1     Running   0          3m9s
+mongo-6b9fcfd49f-4dbs9    1/1     Running   0          3m8s
+post-68f884b866-chv2r     1/1     Running   0          3m8s
+post-68f884b866-dxskq     1/1     Running   0          3m8s
+post-68f884b866-f7tzb     1/1     Running   0          3m8s
+ui-6bc94db77c-2n8gt       1/1     Running   0          3m8s
+ui-6bc94db77c-ckjrg       1/1     Running   0          3m8s
+ui-6bc94db77c-w6g8r       1/1     Running   0          3m8s
+
+```
+
+Определим по какому адресу обратимся к нашему кластеру:
+
+```shell
+
+kubectl get nodes -o wide
+
+otus@otus-VirtualBox:~/Desktop/IvanPrivalov_microservices$ kubectl get nodes -o wide
+NAME                        STATUS   ROLES    AGE   VERSION    INTERNAL-IP   EXTERNAL-IP       OS-IMAGE             KERNEL-VERSION     CONTAINER-RUNTIME
+cl1otcitojcuav607tq5-ikec   Ready    <none>   14m   v1.19.10   10.128.0.12   178.154.203.75    Ubuntu 20.04.2 LTS   5.4.0-74-generic   docker://20.10.7
+cl1otcitojcuav607tq5-ubep   Ready    <none>   14m   v1.19.10   10.128.0.22   178.154.205.145   Ubuntu 20.04.2 LTS   5.4.0-74-generic   docker://20.10.7
+
+```
+
+и порт публикации:
+
+```shell
+
+kubectl describe service ui -n dev | grep NodePort
+
+otus@otus-VirtualBox:~/Desktop/IvanPrivalov_microservices$ kubectl describe service ui -n dev | grep NodePort
+Type:                     NodePort
+NodePort:                 <unset>  32093/TCP
+
+```
+
+![image 3](https://github.com/Otus-DevOps-2021-05/IvanPrivalov_microservices/blob/kubernetes-2/kubernetes/screens/k8s_3.png)
+
+### Разверните Kubernetes-кластер в Yandex cloud с помощью Terraform
+
+Настройки Terraform для развертывания K8S на Yandex Сloud находятся kubernetes\k8s-terraform.
+
+Запуск:
+
+```shell
+
+cd ./kubernetes/k8s-terraform
+
+terraform init
+
+terraform aplly
+
+```
+
+Проверим результат:
+
+```shell
+
+yc managed-kubernetes cluster get-credentials k8s-cluster --external
+
+kubectl config current-context
+yc-k8s-cluster
+
+```
+
+И запустим приложение:
+
+```shell
+
+cd ../..
+kubectl apply -f ./kubernetes/reddit/dev-namespace.yml
+kubectl apply -f ./kubernetes/reddit/ -n dev
+kubectl get pods -n dev
+
+otus@otus-VirtualBox:~/Desktop/IvanPrivalov_microservices$ kubectl get pods -n dev
+NAME                      READY   STATUS    RESTARTS   AGE
+comment-f8db99cc4-8g2d4   1/1     Running   0          3m2s
+comment-f8db99cc4-c2nls   1/1     Running   0          3m2s
+comment-f8db99cc4-vfdfz   1/1     Running   0          3m2s
+mongo-6b9fcfd49f-bjsnh    1/1     Running   0          3m2s
+post-68f884b866-2lj4j     1/1     Running   0          3m1s
+post-68f884b866-8bg6c     1/1     Running   0          3m1s
+post-68f884b866-j2l99     1/1     Running   0          3m1s
+ui-6bc94db77c-9b24n       1/1     Running   0          3m1s
+ui-6bc94db77c-ch48h       1/1     Running   0          3m1s
+ui-6bc94db77c-x7qpd       1/1     Running   0          3m1s
+
+kubectl get nodes -o wide
+
+otus@otus-VirtualBox:~/Desktop/IvanPrivalov_microservices$ kubectl get nodes -o wide
+NAME                        STATUS   ROLES    AGE     VERSION    INTERNAL-IP   EXTERNAL-IP       OS-IMAGE             KERNEL-VERSION     CONTAINER-RUNTIME
+cl1hh42o2998dfbupaim-afec   Ready    <none>   7m50s   v1.19.10   10.128.0.13   178.154.240.237   Ubuntu 20.04.2 LTS   5.4.0-74-generic   docker://20.10.7
+cl1hh42o2998dfbupaim-ivox   Ready    <none>   7m43s   v1.19.10   10.128.0.28   62.84.112.235     Ubuntu 20.04.2 LTS   5.4.0-74-generic   docker://20.10.7
+
+```
+
+Приложение доступно по адресу http://178.154.240.237:32093/
+
+![image 4](https://github.com/Otus-DevOps-2021-05/IvanPrivalov_microservices/blob/kubernetes-2/kubernetes/screens/k8s_4.png)
+
+</details>
 
 ## Kubernetes 1
 
