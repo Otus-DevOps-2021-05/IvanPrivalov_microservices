@@ -554,6 +554,9 @@ deployment.apps/mongo configured
 
 ```
 
+![image 9](https://github.com/Otus-DevOps-2021-05/IvanPrivalov_microservices/blob/kubernetes-3/kubernetes/screens/k8s_9.png)
+
+Наш пост на месте.
 
 </details>
 
