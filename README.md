@@ -1,5 +1,565 @@
 # IvanPrivalov_microservices
 IvanPrivalov microservices repository
+
+## Kubernetes 3 (Networks, Storages.)
+
+<details>
+  <summary>Решение</summary>
+
+### LoadBalancer
+
+Настроим соответствующим образом Service UI
+
+ui-service.yml:
+
+```shell
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ui
+  labels:
+    app: reddit
+    component: ui
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 80
+    nodePort: 32092
+    protocol: TCP
+    targetPort: 9292
+  selector:
+    app: reddit
+    component: ui
+
+```
+
+Настроим соответствующим образом Service UI
+
+```shell
+
+kubectl apply -f ./kubernetes/reddit/ui-service.yml -n dev
+
+```
+
+Проверим:
+
+```shell
+
+kubectl get service -n dev --selector component=ui
+
+otus@otus-VirtualBox:~/Desktop/IvanPrivalov_microservices$ kubectl get service -n dev --selector component=ui
+NAME   TYPE           CLUSTER-IP      EXTERNAL-IP      PORT(S)        AGE
+ui     LoadBalancer   10.96.134.193   178.154.205.67   80:32092/TCP   4m54s
+
+
+```
+
+Наш адрес: http://178.154.205.67:80
+
+### Ingress
+
+Основные задачи, решаемые с помощью Ingress'ов:
+
+- Организация единой точки входа в приложения снаружи
+- Обеспечение балансировки трафика
+- Терминация SSL
+- Виртуальный хостинг на основе имен и т. д.
+
+Установим Ingress:
+
+```shell
+
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v0.34.1/deploy/static/provider/cloud/deploy.yaml
+
+```
+
+```shell
+
+kubectl get pods -n ingress-nginx
+
+NAME                                        READY   STATUS      RESTARTS   AGE
+ingress-nginx-admission-create-2gq4h        0/1     Completed   0          2m10s
+ingress-nginx-admission-patch-v4trm         0/1     Completed   1          2m10s
+ingress-nginx-controller-7d7999cdf6-mxcgw   1/1     Running     0          2m20s
+
+```
+
+![image 5](https://github.com/Otus-DevOps-2021-05/IvanPrivalov_microservices/blob/kubernetes-3/kubernetes/screens/k8s_5.png)
+
+Создадим Ingress для сервиса UI
+
+ui-ingress.yml:
+
+```shell
+
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: ui
+spec:
+  backend:
+    serviceName: ui
+    servicePort: 80
+
+```
+
+Применим конфиг:
+
+```shell
+
+kubectl apply -f ./kubernetes/reddit/ui-ingress.yml -n dev
+
+otus@otus-VirtualBox:~/Desktop/IvanPrivalov_microservices$ kubectl apply -f ./kubernetes/reddit/ui-ingress.yml -n dev
+ingress.extensions/ui created
+
+kubectl get ingress -n dev
+
+NAME   CLASS    HOSTS   ADDRESS         PORTS   AGE
+ui     <none>   *       130.193.39.62   80      5m27s
+
+```
+
+### Secret
+
+Теперь давайте защитим наш сервис с помощью TLS.
+
+Для начала вспомним IngressIP:
+
+```shell
+
+$ kubectl get ingress -n dev
+
+NAME   CLASS    HOSTS   ADDRESS         PORTS   AGE
+ui     <none>   *       130.193.39.62   80      24m
+
+```
+
+Далее подготовим сертификат используя IP как CN
+
+```shell
+
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout tls.key -out tls.crt -subj "/CN=130.193.39.62"
+
+Generating a RSA private key
+.......................................+++++
+.................................+++++
+writing new private key to 'tls.key'
+-----
+
+```
+
+И загрузит сертификат в кластер kubernetes
+
+```shell
+
+kubectl create secret tls ui-ingress --key tls.key --cert tls.crt -n dev
+
+secret/ui-ingress created
+
+```
+
+Проверить можно командой:
+
+```shell
+
+kubectl describe secret ui-ingress -n dev
+
+Name:         ui-ingress
+Namespace:    dev
+Labels:       <none>
+Annotations:  <none>
+
+Type:  kubernetes.io/tls
+
+Data
+====
+tls.crt:  1123 bytes
+tls.key:  1704 bytes
+
+```
+
+### TLS Termination
+
+Теперь настроим Ingress на прием только HTTPS траффика
+
+ui-ingress.yml
+
+```shell
+
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: ui
+  annotations:
+    kubernetes.io/ingress.allow-http: "false"
+spec:
+  tls:
+  - secretName: ui-ingress
+  backend:
+    serviceName: ui
+    servicePort: 9292
+
+```
+
+Применим:
+
+```shell
+
+kubectl apply -f ./kubernetes/reddit/ui-ingress.yml -n dev
+
+ingress.extensions/ui configured
+
+```
+
+Иногда протокол HTTP может не удалиться у существующего Ingress правила, тогда нужно его вручную удалить и пересоздать
+
+```shell
+
+$ kubectl delete ingress ui -n dev
+$ kubectl apply -f ./kubernetes/reddit/ui-ingress.yml -n dev
+
+```
+
+![image 6](https://github.com/Otus-DevOps-2021-05/IvanPrivalov_microservices/blob/kubernetes-3/kubernetes/screens/k8s_6.png)
+
+### Задание со *
+
+Опишите создаваемый объект Secret в виде Kubernetes-манифеста.
+
+Создал манифест tls-secret.yml
+
+```shell
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ui-ingress
+type: kubernetes.io/tls
+data:
+  tls.crt:
+
+  tls.key:
+
+```
+
+Добавил в ui-ingress.yml обьект Secret
+
+```shell
+
+---
+  apiVersion: networking.k8s.io/v1
+  kind: Ingress
+  metadata:
+    name: ui
+    annotations:
+      kubernetes.io/ingress.allow-http: "false"
+  spec:
+    tls:
+      - secretName: ui-ingress
+    rules:
+    - http:
+        paths:
+        - path: "/"
+          pathType: Prefix
+          backend:
+            service:
+              name: ui
+              port:
+                number: 9292
+
+```
+
+### Network Policy
+
+Имя кластера:
+
+```shell
+
+$ yc container cluster list
++----------------------+-------------+---------------------+---------+---------+-----------------------+---------------------+
+|          ID          |    NAME     |     CREATED AT      | HEALTH  | STATUS  |   EXTERNAL ENDPOINT   |  INTERNAL ENDPOINT  |
++----------------------+-------------+---------------------+---------+---------+-----------------------+---------------------+
+| catrd4rvg5cav24bqqur | k8s-cluster | 2021-09-30 07:40:07 | HEALTHY | RUNNING | https://62.84.116.228 | https://10.128.0.28 |
++----------------------+-------------+---------------------+---------+---------+-----------------------+---------------------+
+
+```
+
+Создадим NetworkPolicy.
+
+mongo-network-policy.yml:
+
+```shell
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-db-traffic
+  labels:
+    app: reddit
+spec:
+  podSelector:
+    matchLabels:
+      app: reddit
+      component: mongo
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: reddit
+          component: comment
+
+```
+
+Применяем политику:
+
+```shell
+
+$ kubectl apply -f ./kubernetes/reddit/mongo-network-policy.yml -n dev
+
+networkpolicy.networking.k8s.io/deny-db-traffic created
+
+```
+
+Обновил mongo-network-policy.yml так, чтобы post-сервис дошел до базы данных.
+
+```shell
+
+---
+  apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: deny-db-traffic
+    labels:
+      app: reddit
+  spec:
+    podSelector:
+      matchLabels:
+        app: reddit
+        component: mongo
+    policyTypes:
+      - Ingress
+    ingress:
+    - from:
+      - podSelector:
+          matchLabels:
+            app: reddit
+            component: comment
+      - podSelector:
+          matchLabels:
+            app: reddit
+            component: post
+
+```
+
+Применяем политику:
+
+```shell
+
+$ kubectl apply -f ./kubernetes/reddit/mongo-network-policy.yml -n dev
+
+networkpolicy.networking.k8s.io/deny-db-traffic created
+
+```
+
+### Хранилище для базы
+
+Основной Stateful сервис в нашем приложении - это базы данных MongoDB. В текущий момент она запускается в виде Deployment и хранит данные в стандартных Docker
+Volume-ах.
+
+Это имеет несколько проблем:
+
+- При удалении POD-а удаляется и Volume
+- Потерям Nod'ы с mongo грозит потерей данных
+- Запуск базы на другой ноде запускает новый экземпляр данных
+
+### PersitentVolume
+
+Cоздадим диск в ya.cloud командой:
+
+```shell
+
+yc compute disk create \
+--name k8s \
+--size 4 \
+--description "disk for k8s"
+
+id: fhmcfarojp7vehcc7om3
+folder_id: b1gfroh2tett7b3hdn78
+created_at: "2021-09-30T10:04:24Z"
+name: k8s
+description: disk for k8s
+type_id: network-hdd
+zone_id: ru-central1-a
+size: "4294967296"
+block_size: "4096"
+status: READY
+disk_placement_policy: {}
+
+$ yc compute disk list
++----------------------+------+-------------+---------------+--------+----------------------+--------------+
+|          ID          | NAME |    SIZE     |     ZONE      | STATUS |     INSTANCE IDS     | DESCRIPTION  |
++----------------------+------+-------------+---------------+--------+----------------------+--------------+
+| fhmcfarojp7vehcc7om3 | k8s  |  4294967296 | ru-central1-a | READY  |                      | disk for k8s |
++----------------------+------+-------------+---------------+--------+----------------------+--------------+
+
+```
+
+Создадим PV в ya.cloud
+
+mongo-volume.yml:
+
+```shell
+
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: mongo-pv
+spec:
+  capacity:
+    storage: 4Gi
+  accessModes:
+    - ReadWriteOnce
+  csi:
+    driver: disk-csi-driver.mks.ycloud.io
+    fsType: ext4
+    volumeHandle: fhmcfarojp7vehcc7om3
+
+```
+
+Выполним:
+
+```shell
+
+$ kubectl apply -f ./kubernetes/reddit/mongo-volume.yml -n dev
+
+persistentvolume/mongo-pv created
+
+```
+
+Создадим PVC
+
+mongo-claim.yml:
+
+```shell
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mongo-pvc
+spec:
+  storageClassName: ""
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 4Gi
+  volumeName: mongo-pv
+
+```
+
+Выполним:
+
+```shell
+
+$ kubectl apply -f ./kubernetes/reddit/mongo-claim.yml -n dev
+
+persistentvolumeclaim/mongo-pvc created
+
+```
+
+Добавим volume в mongo-deployment.yml
+
+```shell
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongo
+  labels:
+    app: reddit
+    component: mongo
+    comment-db: "true"
+    post-db: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: reddit
+      component: mongo
+  template:
+    metadata:
+      name: mongo
+      labels:
+        app: reddit
+        component: mongo
+        comment-db: "true"
+        post-db: "true"
+    spec:
+      containers:
+      - image: mongo:3.2
+        name: mongo
+        volumeMounts:
+        - name: mongo-persistent-storage
+          mountPath: /data/db
+      volumes:
+        - name: mongo-persistent-storage
+          persistentVolumeClaim:
+            claimName:  mongo-pvc
+
+```
+
+Выполним:
+
+```shell
+
+$ kubectl apply -f ./kubernetes/reddit/mongo-deployment.yml -n dev
+
+deployment.apps/mongo configured
+
+```
+
+Создадим пост:
+
+![image 7](https://github.com/Otus-DevOps-2021-05/IvanPrivalov_microservices/blob/kubernetes-3/kubernetes/screens/k8s_7.png)
+
+Удалим deployment:
+
+```shell
+
+$ kubectl delete deploy mongo -n dev
+
+deployment.apps "mongo" deleted
+
+```
+
+![image 8](https://github.com/Otus-DevOps-2021-05/IvanPrivalov_microservices/blob/kubernetes-3/kubernetes/screens/k8s_8.png)
+
+Снова создадим деплой mongo:
+
+```shell
+
+$ kubectl apply -f ./kubernetes/reddit/mongo-deployment.yml -n dev
+
+deployment.apps/mongo configured
+
+```
+
+![image 9](https://github.com/Otus-DevOps-2021-05/IvanPrivalov_microservices/blob/kubernetes-3/kubernetes/screens/k8s_9.png)
+
+Наш пост на месте.
+
+</details>
+
 ## Kubernetes 2 (Запуск кластера и приложения. Модель безопасности)
 
 <details>

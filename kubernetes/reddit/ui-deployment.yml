@@ -20,7 +20,7 @@ spec:
         component: ui
     spec:
       containers:
-      - image: airmeno/ui
+      - image: privalovip/ui
         name: ui
         env:
         - name: ENV

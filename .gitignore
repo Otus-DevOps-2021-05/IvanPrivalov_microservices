@@ -10,3 +10,5 @@ vault.key
 *.swp
 key.json
 .env
+tls.crt
+tls.key

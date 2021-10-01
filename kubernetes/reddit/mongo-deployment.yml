@@ -2,7 +2,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: mongo
+  name: mongo-gce-pd-storage #mongo
   labels:
     app: reddit
     component: mongo
@@ -30,5 +30,6 @@ spec:
         - name: mongo-persistent-storage
           mountPath: /data/db
       volumes:
-      - name: mongo-persistent-storage
-        emptyDir: {}
+        - name: mongo-persistent-storage
+          persistentVolumeClaim:
+            claimName:  mongo-pvc
