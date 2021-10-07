@@ -1,7 +1,7 @@
 # IvanPrivalov_microservices
 IvanPrivalov microservices repository
 
-## CI/CD в Kubernetes
+## Kubernetes 4 CI/CD в Kubernetes
 
 <details>
   <summary>Решение</summary>
