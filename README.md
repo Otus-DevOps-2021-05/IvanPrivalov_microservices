@@ -1,6 +1,232 @@
 # IvanPrivalov_microservices
 IvanPrivalov microservices repository
 
+## Kubernetes 4 CI/CD в Kubernetes
+
+<details>
+  <summary>Решение</summary>
+
+### План:
+
+- Работа с Helm
+- Развертывание Gitlab в Kubernetes
+- Запуск CI/CD конвейера в Kubernetes
+
+### Helm
+
+Установка:
+
+```shell
+
+sudo curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+```
+
+Добавим репо:
+
+```shell
+
+helm repo add stable https://charts.helm.sh/stable && helm repo add incubator https://charts.helm.sh/incubator && helm repo add harbor https://helm.goharbor.io && helm repo update
+
+```
+
+Установим Ingress:
+
+```shell
+
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v0.44.0/deploy/static/provider/cloud/deploy.yaml
+
+```
+
+### Charts
+
+Chart для компонентов ui, comment, post приложения:
+
+```shell
+
+.
+├── comment
+│   ├── Chart.yaml
+│   ├── templates
+│   │   ├── deployment.yaml
+│   │   └── service.yaml
+│   └── values.yaml
+├── post
+│   ├── Chart.yaml
+│   ├── templates
+│   │   ├── deployment.yaml
+│   │   └── service.yaml
+│   └── values.yaml
+└── ui
+    ├── Chart.yaml
+    ├── templates
+    │   ├── deployment.yaml
+    │   ├── ingress.yaml
+    │   └── service.yaml
+    └── values.yaml
+
+```
+
+Добавим Helper-ы.
+
+Helper - это написанная нами функция. В функции описывается, как правило, сложная логика. Шаблоны этих функция распологаются в файле _helpers.tpl
+
+Структура становится следующая:
+
+```shell
+
+.
+├── comment
+│   ├── Chart.yaml
+│   ├── templates
+│   │   ├── deployment.yaml
+│   │   ├── _helpers.tpl
+│   │   └── service.yaml
+│   └── values.yaml
+├── post
+│   ├── Chart.yaml
+│   ├── templates
+│   │   ├── deployment.yaml
+│   │   ├── _helpers.tpl
+│   │   └── service.yaml
+│   └── values.yaml
+└── ui
+    ├── Chart.yaml
+    ├── templates
+    │   ├── deployment.yaml
+    │   ├── _helpers.tpl
+    │   ├── ingress.yaml
+    │   └── service.yaml
+    └── values.yaml
+
+```
+
+### Управление зависимостями.
+
+С помощью механизма управления зависимостями создадим единый Chart reddit, который объединит наши компоненты.
+
+Загрузим зависимости:
+
+```shell
+
+helm dep update
+
+```
+
+Структура станет следующей:
+
+```shell
+
+reddit
+├── charts
+│   ├── comment-1.0.0.tgz
+│   ├── mongodb-7.8.10.tgz
+│   ├── post-1.0.0.tgz
+│   └── ui-1.0.0.tgz
+├── Chart.yaml
+├── requirements.lock
+├── requirements.yaml
+└── values.yaml
+
+```
+
+Установим наше приложение:
+
+```shell
+
+kubectl create ns dev
+helm upgrade --install --namespace=dev --wait reddit-release reddit/
+
+$ kubectl get ingress -n dev
+NAME                CLASS    HOSTS   ADDRESS           PORTS   AGE
+reddit-release-ui   <none>   *       178.154.222.206   80      71s
+
+$ kubectl get pods -n dev
+NAME                                   READY   STATUS    RESTARTS   AGE
+reddit-test-comment-5c884b6fff-2zv2d   1/1     Running   0          40s
+reddit-test-comment-5c884b6fff-bpdmq   1/1     Running   0          40s
+reddit-test-comment-5c884b6fff-btkwg   1/1     Running   0          40s
+reddit-test-mongodb-bb985f44d-rftnh    1/1     Running   0          40s
+reddit-test-post-6b58f9b58d-6t2xp      1/1     Running   0          40s
+reddit-test-post-6b58f9b58d-ckqqj      1/1     Running   0          40s
+reddit-test-post-6b58f9b58d-t67p9      1/1     Running   0          40s
+reddit-test-ui-644f46774b-bvkq6        1/1     Running   0          40s
+reddit-test-ui-644f46774b-vv95x        1/1     Running   0          40s
+reddit-test-ui-644f46774b-wnfvr        1/1     Running   0          40s
+
+```
+
+### GitLab + Kubernetes
+
+Поднимем k8s и установим nginx ingress
+
+```shell
+
+cd kubernetes/k8s-terraform/
+terraform apply
+yc managed-kubernetes cluster get-credentials k8s-cluster --external --force
+kubectl config current-context
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v0.44.0/deploy/static/provider/cloud/deploy.yaml
+
+```
+
+Установим GitLab:
+
+```shell
+
+helm repo add gitlab https://charts.gitlab.io
+
+helm fetch gitlab/gitlab-omnibus --version 0.1.37 --untar
+
+cd gitlab-omnibus
+
+helm install gitlab . -f values.yaml
+
+```
+
+Запуск проекта.
+
+Локально создана директория Gitlab_ci со следующей структурой каталогов.
+
+```shell
+
+Gitlab_ci
+├── comment
+├── post
+├── reddit-deploy
+└── ui
+
+```
+
+Перенес исходные коды сервиса ui в Gitlab_ci/ui
+
+```shell
+
+tree
+├── build_info.txt
+├── config.ru
+├── docker_build.sh
+├── Dockerfile
+├── Dockerfile_v1
+├── Gemfile
+├── Gemfile.lock
+├── helpers.rb
+├── middleware.rb
+├── newfile
+├── ui_app.rb
+├── VERSION
+└── views
+    ├── create.haml
+    ├── index.haml
+    ├── layout.haml
+    └── show.haml
+
+```
+
+Настроен CI для компонентов reddit app и для деплоя приложения.
+
+</details>
+
 ## Kubernetes 3 (Networks, Storages.)
 
 <details>
