@@ -1,5 +1,4 @@
-# IvanPrivalov_microservices
-IvanPrivalov microservices repository
+# IvanPrivalov ссылка на проект https://github.com/IvanPrivalov/devops-project
 
 ## Kubernetes 4 CI/CD в Kubernetes
 
